@@ -2,23 +2,22 @@ using UnityEditor;
 using UnityEngine;
 using UnityEditorInternal;
 using System.Collections.Generic;
-using UnityEngine.Localization.Tables;
 using UnityEngine.Localization.Settings;
 using UnityEngine.Localization;
-using Assets.Gridly_loc_package.Runtime.Scripts.Gridly.Model;
+using Assets.Gridly_loc_package.Editor.Scripts.Gridly.Model;
 using System.Linq;
 using System.IO;
 using UnityEditor.Localization;
-using Assets.Gridly_loc_package.Runtime.Scripts;
+using Assets.Gridly_loc_package.Editor.Scripts;
 using System;
-using Assets.Gridly_loc_package.Runtime.Scripts.Gridly.Dialog;
-using Codice.CM.Common;
+using Assets.Gridly_loc_package.Editor.Scripts.Gridly.Dialog;
 using System.Collections;
 using System.Threading.Tasks;
 using UnityEngine.Networking;
 using System.Text;
-using Newtonsoft.Json.Linq;
-using Assets.Gridly_loc_package.Runtime.Scripts.Gridly.Enum;
+using Assets.Gridly_loc_package.Editor.Scripts.Gridly.Enum;
+using Assets.Gridly_loc_package.Editor.gridly.Utils;
+
 
 public class LocalizationUploaderWindow : EditorWindow
 {
@@ -35,71 +34,48 @@ public class LocalizationUploaderWindow : EditorWindow
 
 
 
-    private ApiClient apiClient;
-    private ColumnResolver columnResolver;
+    private static ApiClient apiClient;
+    private static ColumnResolver columnResolver;
 
-    private string exportPath;
-    private string exportViewId;
-    private string importViewId;
-    private string exportApiKey;
-    private string importApiKey;
-    private bool deleteExtraRecordsKey;
-    private bool useDifferentImportView; // New flag for using different view for import
-    private SmartOption selectedImportOption;
-    private SmartOption selectedExportOption;
+    private static string exportPath;
+    private static string exportViewId;
+    private static string importViewId;
+    private static string exportApiKey;
+    private static string importApiKey;
+    private static bool deleteExtraRecordsKey;
+    private static bool useDifferentImportView; // New flag for using different view for import
+    private static SmartOption selectedImportOption;
+    private static SmartOption selectedExportOption;
 
-    private ReorderableList tableList;
-    private List<TableSelection> selectedTables = new List<TableSelection>();
-    private List<Locale> availableLocales;
+    private static ReorderableList tableList;
+    private static List<TableSelection> selectedTables = new List<TableSelection>();
+    private static List<Locale> availableLocales;
 
-    private List<string> availableFiles = new List<string>();
-    private List<string> availableLanguages = new List<string>();
-    private int selectedFileMask = 0; // Bitmask for selected files
-    private int selectedLanguageMask = 0; // Bitmask for selected languages
+    private static List<string> availableFiles = new List<string>();
+    private static List<string> availableLanguages = new List<string>();
+    private static int selectedFileMask = 0; // Bitmask for selected files
+    private static int selectedLanguageMask = 0; // Bitmask for selected languages
 
-    private List<CsvRecord> deletedRecords = new List<CsvRecord>();
+    private static List<CsvRecord> deletedRecords = new List<CsvRecord>();
 
 
-    private bool dataFetched = false; // Flag to track if data is fetched
+    private static bool dataFetched = false; // Flag to track if data is fetched
+    private Vector2 scrollPosition = Vector2.zero;
+
 
     // Static list to manage coroutines
     private static List<IEnumerator> coroutinesInProgress = new List<IEnumerator>();
 
-    // Coroutine manager execution loop
-    static LocalizationUploaderWindow()
-    {
-        EditorApplication.update += ExecuteCoroutines;
-    }
 
     [MenuItem("Tools/Gridly Integration")]
     public static void ShowWindow()
     {
         GetWindow<LocalizationUploaderWindow>("Gridly Integration");
+        OnShow();
     }
 
-    // Adds a new coroutine to the execution list
-    public static void StartCoroutine(IEnumerator coroutine)
-    {
-        coroutinesInProgress.Add(coroutine);
-    }
 
-    // Executes all coroutines added to the list
-    private static void ExecuteCoroutines()
-    {
-        if (coroutinesInProgress.Count == 0)
-            return;
-
-        for (int i = coroutinesInProgress.Count - 1; i >= 0; i--)
-        {
-            if (!coroutinesInProgress[i].MoveNext())
-            {
-                // Remove coroutine if it's finished
-                coroutinesInProgress.RemoveAt(i);
-            }
-        }
-    }
-
-    private void OnEnable()
+    private static void OnShow()
     {
         // Check if UnityEngine.Localization is installed
         if (!IsLocalizationPackageInstalled())
@@ -108,14 +84,11 @@ public class LocalizationUploaderWindow : EditorWindow
             return;
         }
         // Create instances of ApiClient and ColumnResolver
-        apiClient = new GameObject("ApiClient").AddComponent<ApiClient>();
-        columnResolver = new GameObject("ColumnResolver").AddComponent<ColumnResolver>();
-
-        // Manually set the apiClient in columnResolver
-        columnResolver.Initialize(apiClient);
+        apiClient = new();
+        columnResolver = new(apiClient);
 
         // Fetch available locales
-        availableLocales = LocalizationSettings.AvailableLocales.Locales;
+        availableLocales = LocalizationEditorSettings.GetLocales().ToList();
 
         // Load saved settings
         exportPath = EditorPrefs.GetString(ExportPathKey, "Assets/LocalizationExports/");
@@ -241,8 +214,11 @@ public class LocalizationUploaderWindow : EditorWindow
         GUILayout.Space(10);
         GUILayout.Label("Export into Gridly", EditorStyles.boldLabel);
 
-        // Draw the reorderable list
+        // Draw the reorderable list in a scroll view
+        scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
         tableList.DoLayoutList();
+        EditorGUILayout.EndScrollView();
+
 
         if (GUILayout.Button("Export CSV and upload to Gridly"))
         {
@@ -320,13 +296,21 @@ public class LocalizationUploaderWindow : EditorWindow
         }
     }
 
-    private void GetViewData()
+    private async void GetViewData()
     {
         string viewIdToUse = useDifferentImportView ? importViewId : exportViewId;
         string apiKeyToUse = useDifferentImportView ? importApiKey : exportApiKey;
 
         // Fetch the files from the view using GetPathsTree
-        apiClient.GetPathsTree(viewIdToUse, apiKeyToUse, OnPathsFetched, OnErrorFetchingPaths);
+        try
+        {
+            var paths = await apiClient.GetPathsTreeAsync(viewIdToUse, apiKeyToUse);
+            OnPathsFetched(paths);
+        }
+        catch (Exception ex)
+        {
+            OnErrorFetchingPaths(ex.Message);
+        }
     }
 
     private void OnPathsFetched(List<string> paths)
@@ -338,12 +322,20 @@ public class LocalizationUploaderWindow : EditorWindow
         FetchLanguagesFromView();
     }
 
-    private void FetchLanguagesFromView()
+    private async void FetchLanguagesFromView()
     {
         string viewIdToUse = useDifferentImportView ? importViewId : exportViewId;
         string apiKeyToUse = useDifferentImportView ? importApiKey : exportApiKey;
 
-        apiClient.GetView(viewIdToUse, apiKeyToUse, OnViewFetched, OnErrorFetchingView);
+        try
+        {
+            var view = await apiClient.GetViewAsync(viewIdToUse, apiKeyToUse);
+            OnViewFetched(view);
+        }
+        catch (Exception ex)
+        {
+            OnErrorFetchingView(ex.Message);
+        }
     }
 
     private void OnViewFetched(View view)
@@ -410,9 +402,18 @@ public class LocalizationUploaderWindow : EditorWindow
             return;
         }
 
-        // Create an instance of LocalizationImporter and start importing data
-        LocalizationImporter importer = new LocalizationImporter(apiClient, importViewId, importApiKey, selectedImportOption);
-        importer.ImportData(selectedFileNames, selectedLanguageNames);
+        if (useDifferentImportView)
+        {
+            // Create an instance of LocalizationImporter and start importing data
+            LocalizationImporter importer = new LocalizationImporter(apiClient, importViewId, importApiKey, selectedImportOption);
+            importer.ImportData(selectedFileNames, selectedLanguageNames);
+        }
+        else
+        {
+            // Create an instance of LocalizationImporter and start importing data
+            LocalizationImporter importer = new LocalizationImporter(apiClient, exportViewId, exportApiKey, selectedImportOption);
+            importer.ImportData(selectedFileNames, selectedLanguageNames);
+        }
 
         SaveSelectedTables();  // Save the selected tables and locales when data is imported
     }
@@ -439,6 +440,8 @@ public class LocalizationUploaderWindow : EditorWindow
 
     private async Task ExportAndUploadCsvAsync()
     {
+
+        await FileUtils.DeleteAllFilesAsync(exportPath);
         List<string> localeIdentifiers = selectedTables
             .Where(tableSelection => tableSelection.Table != null)
             .SelectMany(tableSelection => tableSelection.Table.StringTables
@@ -452,7 +455,7 @@ public class LocalizationUploaderWindow : EditorWindow
         // Call the ColumnResolver to process the uploaded data
         if (columnResolver != null)
         {
-            columnResolver.StartColumnResolver(exportViewId, exportApiKey, localeIdentifiers);
+            await columnResolver.StartColumnResolverAsync(exportViewId, exportApiKey, localeIdentifiers);
         }
         else
         {
@@ -469,12 +472,13 @@ public class LocalizationUploaderWindow : EditorWindow
                 {
                     if (tableSelection.IsLocaleSelected(table.LocaleIdentifier, availableLocales))
                     {
-                        string path = exportPath + ($"_{tableSelection.Table.TableCollectionName}_{table.LocaleIdentifier}.csv");
+                        string path = exportPath + ($"/_{tableSelection.Table.TableCollectionName}_{table.LocaleIdentifier}.csv");
+                        var entries = table.Values.Where(entry => entry.Key != null);
 
                         // Await the export operation asynchronously
-                        await LocalizationExporter.ExportLocalizationCSVAsync(path, tableSelection.Table, table.LocaleIdentifier, selectedExportOption);
+                        int numberOfRecords = await LocalizationExporter.ExportLocalizationCSVAsync(path, tableSelection.Table, table.LocaleIdentifier, selectedExportOption);
 
-                        if (table.Values.Count > 0)
+                        if (numberOfRecords > 0)
                         {
                             csvFiles.Add(path);
                         }
@@ -482,23 +486,34 @@ public class LocalizationUploaderWindow : EditorWindow
                 }
             }
         }
-
-        // Once all exports are done, merge the CSV files asynchronously
-        string outputPath = exportPath + "_allRecords.csv";
-        await CsvMerger.MergeCsvFilesAsync(csvFiles, outputPath);
-
-        // Upload the merged CSV
-        if (apiClient != null)
+        // merge only if there is asingle CSV
+        if (csvFiles.Count > 0)
         {
-            apiClient.UploadCsvFile(exportViewId, exportApiKey, outputPath, OnUploadSuccess, OnUploadError);
-        }
-        else
-        {
-            Debug.LogError("ApiClient not found or not properly initialized.");
-            return;
-        }
+            // Once all exports are done, merge the CSV files asynchronously
+            string outputPath = exportPath + "/_allRecords.csv";
+            await CsvMerger.MergeCsvFilesAsync(csvFiles, outputPath);
 
-        await ExportViewAsCsv();
+            // Upload the merged CSV
+            if (apiClient != null)
+            {
+                try
+                {
+                    string uploadResult = await apiClient.UploadCsvFileAsync(exportViewId, exportApiKey, outputPath);
+                    OnUploadSuccess(uploadResult);
+                }
+                catch (Exception ex)
+                {
+                    OnUploadError(ex.Message);
+                }
+            }
+            else
+            {
+                Debug.LogError("ApiClient not found or not properly initialized.");
+                return;
+            }
+
+            await ExportViewAsCsv();
+        }
 
         Dictionary<string, int> exportSummary = new Dictionary<string, int>();
         foreach (var file in csvFiles)
@@ -566,7 +581,7 @@ public class LocalizationUploaderWindow : EditorWindow
 
     private void SaveCsvToFile(string csvContent)
     {
-        string path = $"{exportPath}GridlyViewExport.csv";
+        string path = $"{exportPath}/GridlyViewExport.csv";
 
         try
         {
@@ -624,7 +639,7 @@ public class LocalizationUploaderWindow : EditorWindow
 
 
 
-    private async Task DeleteRecordsFromGridlyAsync(List<string> recordIds)
+    private async Task DeleteRecordsFromGridlyAsync(List<string> recordIds, int maxRetries = 5, int retryDelayMilliseconds = 5000)
     {
         string url = $"https://api.gridly.com/v1/views/{exportViewId}/records";
 
@@ -632,33 +647,56 @@ public class LocalizationUploaderWindow : EditorWindow
         string jsonData = "{\"ids\":[" + string.Join(",", recordIds.Select(id => $"\"{id}\"")) + "]}";
         Debug.Log($"Generated JSON for deletion: {jsonData}");
 
-        using (UnityWebRequest request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbDELETE))
+        int attempt = 0;
+
+        while (attempt < maxRetries)
         {
-            request.SetRequestHeader("Authorization", "ApiKey " + exportApiKey);
-            request.SetRequestHeader("Content-Type", "application/json");
+            attempt++;
 
-            // Attach the JSON payload to the request
-            byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
-            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
-            request.downloadHandler = new DownloadHandlerBuffer();
-
-            Debug.Log($"Request payload length: {bodyRaw.Length} bytes");
-
-            // Await the request completion
-            await SendWebRequestAsync(request);
-
-            // Error handling
-            if (request.result == UnityWebRequest.Result.ConnectionError || request.result == UnityWebRequest.Result.ProtocolError)
+            using (UnityWebRequest request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbDELETE))
             {
-                Debug.LogError($"Failed to delete records: {request.error} (Code: {request.responseCode})");
-                Debug.LogError($"Response Text: {request.downloadHandler.text}");
-            }
-            else
-            {
-                Debug.Log("Records successfully deleted from Gridly.");
+                request.SetRequestHeader("Authorization", "ApiKey " + exportApiKey);
+                request.SetRequestHeader("Content-Type", "application/json");
+
+                // Attach the JSON payload to the request
+                byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
+                request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+                request.downloadHandler = new DownloadHandlerBuffer();
+
+                Debug.Log($"Request payload length: {bodyRaw.Length} bytes");
+
+                // Await the request completion
+                await SendWebRequestAsync(request);
+
+                // Check for errors
+                if (request.result == UnityWebRequest.Result.ConnectionError || request.result == UnityWebRequest.Result.ProtocolError)
+                {
+                    Debug.LogError($"Failed to delete records: {request.error} (Code: {request.responseCode})");
+                    Debug.LogError($"Response Text: {request.downloadHandler.text}");
+
+                    // Check if the response indicates a backup state (409 Conflict with specific message)
+                    if (request.responseCode == 409 && request.downloadHandler.text.Contains("\"gridBackuping\""))
+                    {
+                        Debug.LogWarning($"Gridly is in a backup state. Retrying in {retryDelayMilliseconds} ms... (Attempt {attempt}/{maxRetries})");
+                        await Task.Delay(retryDelayMilliseconds);
+                        continue; // Retry
+                    }
+
+                    // For other errors, break and fail
+                    Debug.LogError("Aborting deletion due to an error unrelated to backup state.");
+                    return;
+                }
+                else
+                {
+                    Debug.Log("Records successfully deleted from Gridly.");
+                    return; // Exit on success
+                }
             }
         }
+
+        Debug.LogError($"Failed to delete records after {maxRetries} attempts. Gridly might still be in a backup state.");
     }
+
 
     private List<CsvRecord> LoadCsvRecords(string path, string recordIdHeader, string pathHeader)
     {
@@ -670,11 +708,15 @@ public class LocalizationUploaderWindow : EditorWindow
             return records;
         }
 
-        var lines = File.ReadAllLines(path);
-        if (lines.Length == 0) return records;
+        // Read the entire file content as a single string
+        string fileContent = File.ReadAllText(path);
 
-        // Parse header to determine column indexes, removing extra quotes
-        var headers = lines[0].Split(',').Select(h => h.Trim().Trim('"')).ToArray();
+        // Parse CSV content
+        var rows = ParseCsv(fileContent);
+        if (rows.Count == 0) return records;
+
+        // Parse header to determine column indexes
+        var headers = rows[0];
         int recordIdIndex = Array.IndexOf(headers, recordIdHeader);
         int pathIndex = Array.IndexOf(headers, pathHeader);
 
@@ -684,25 +726,76 @@ public class LocalizationUploaderWindow : EditorWindow
             return records;
         }
 
-        // Parse each line using identified column indexes
-        foreach (var line in lines.Skip(1))
+        // Parse each row using identified column indexes
+        foreach (var row in rows.Skip(1))
         {
-            var columns = line.Split(',');
-
-            // Trim each column and remove extra quotes
-            columns = columns.Select(col => col.Trim().Trim('"')).ToArray();
-
-            if (columns.Length <= Math.Max(recordIdIndex, pathIndex)) continue;
+            if (row.Length <= Math.Max(recordIdIndex, pathIndex)) continue;
 
             records.Add(new CsvRecord
             {
-                RecordId = columns[recordIdIndex],
-                Path = columns[pathIndex]
+                RecordId = row[recordIdIndex].Trim().Trim('"'),
+                Path = row[pathIndex].Trim().Trim('"')
             });
         }
 
         return records;
     }
+
+    // Helper method to parse CSV content with support for quoted fields and inline newlines
+    private List<string[]> ParseCsv(string content)
+    {
+        var rows = new List<string[]>();
+        var currentRow = new List<string>();
+        var currentField = new StringBuilder();
+        bool inQuotes = false;
+
+        foreach (char c in content)
+        {
+            if (c == '\"')
+            {
+                if (inQuotes && currentField.Length > 0 && currentField[currentField.Length - 1] == '\"')
+                {
+                    // Handle escaped double quotes
+                    currentField.Append('\"');
+                }
+                else
+                {
+                    inQuotes = !inQuotes;
+                }
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                // End of a field
+                currentRow.Add(currentField.ToString());
+                currentField.Clear();
+            }
+            else if (c == '\n' && !inQuotes)
+            {
+                // End of a row
+                currentRow.Add(currentField.ToString());
+                rows.Add(currentRow.ToArray());
+                currentRow.Clear();
+                currentField.Clear();
+            }
+            else
+            {
+                currentField.Append(c);
+            }
+        }
+
+        // Handle the last field and row
+        if (currentField.Length > 0)
+        {
+            currentRow.Add(currentField.ToString());
+        }
+        if (currentRow.Count > 0)
+        {
+            rows.Add(currentRow.ToArray());
+        }
+
+        return rows;
+    }
+
 
     private class CsvRecord
     {
@@ -717,7 +810,7 @@ public class LocalizationUploaderWindow : EditorWindow
         EditorPrefs.SetString(SelectedTablesKey, serializedTables);
     }
 
-    private void LoadSelectedTables()
+    private static void LoadSelectedTables()
     {
         selectedTables.Clear();
         string serializedTables = EditorPrefs.GetString(SelectedTablesKey, "");
@@ -775,17 +868,6 @@ public class LocalizationUploaderWindow : EditorWindow
         EditorPrefs.SetBool(UseDifferentImportViewKey, useDifferentImportView);
         EditorPrefs.SetInt(ImportOptionKey, (int)selectedImportOption);
         EditorPrefs.SetInt(ExportOptionKey, (int)selectedExportOption);
-
-        // Clean up the created GameObjects
-        if (apiClient != null)
-        {
-            DestroyImmediate(apiClient.gameObject);
-        }
-
-        if (columnResolver != null)
-        {
-            DestroyImmediate(columnResolver.gameObject);
-        }
     }
 
     private class TableSelection
@@ -816,7 +898,7 @@ public class LocalizationUploaderWindow : EditorWindow
         }
     }
 
-    private bool IsLocalizationPackageInstalled()
+    private static bool IsLocalizationPackageInstalled()
     {
         // Try to get the LocalizationSettings type from UnityEngine.Localization
         var type = Type.GetType("UnityEngine.Localization.Settings.LocalizationSettings, Unity.Localization");
