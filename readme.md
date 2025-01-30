@@ -51,7 +51,7 @@ This plugin facilitates the integration of Unity's Localization package with Gri
 ## Sending Content to Gridly
 
 - In Gridly, ensure that the column name and ID match the language code used in Unity (e.g., `enUS`, `frFR`, `esES`).  
-<figures style="text-aling: center">
+<figures style="text-align: center">
 <figure>
         <img src=
 "img/column_name.png" 
