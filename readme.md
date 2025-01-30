@@ -6,10 +6,10 @@ This plugin facilitates the integration of Unity's Localization package with Gri
 
 1. **Install Unity Localization Package**  
    - Download and install the Unity Localization package from the [Unity Documentation](https://docs.unity3d.com/Packages/com.unity.localization@1.0/manual/index.html).  
-   - Follow the instructions on the page to add target languages and manage source strings in your game.
+   - Follow the instructions to add target languages and manage strings in your application.
 
 2. **Copy Plugin Folder**  
-   - Extract the plugin folder and copy it into your application's `Assets` folder for example `My project\Assets\Gridly-loc-package`.
+   - Extract the plugin folder and copy it into your `Assets` folder for example `My project\Assets\Gridly-loc-package`.
 
 3. **Add Target Languages**  
    - Go to `Edit -> Project Settings -> Localization` and add your target languages.
@@ -22,7 +22,7 @@ This plugin facilitates the integration of Unity's Localization package with Gri
 ## Plugin Settings
 
 1. **Configure CSV Path**  
-   - Set the path where the plugin will generate CSV files.
+   - Set the path in which the plugin will generate CSV files.
 
 2. **Set View ID**  
    - Enter your Gridly View ID.
@@ -37,14 +37,14 @@ This plugin facilitates the integration of Unity's Localization package with Gri
    - Choose the languages you want to send to Gridly from the Localization table.
 
 ## Notes
-1. **Use separate view for push and pull**
-	- If you pick the checkmark of "Use different View for Import, you can define a separate View ID and Password for import from Gridly into Unity."
+1. **Use separate views for push and pull**
+	- If you check the option "Use different View for Import", you can define a separate View ID and Password for importing from Gridly to Unity."
 
 2. **Smart strings**
-	- You can set that what type of strings you would like to send or receive using the plugin. In Unity localization package you can set strings as smart string and using the import/export type selection you can define whether you want to send/receive only smart/non-smart or all type of strings.
+	- You can set the string type you would like to send or receive using the plugin. In the Unity localization package, you can set strings as smart strings. Using the import/export type selection, you can define whether you want to send/receive only smart/non-smart or all types of strings.
 
-3. **Keep your View in synch with the records you have in Unity**
-	- If you use the "Delete removed records from Gridly" setting, upon pushing the content into Gridly it checks whether you have any records in Gridly that you already deleted from Unity, and if you have, it removes it.
+3. **Keep your View in synch with your Unity records**
+	- If desired, you can use the "Delete removed records from Gridly" setting. This results in strings being removed from Gridly if they have been removed from Unity.
 
 ---
 
@@ -62,8 +62,8 @@ This plugin facilitates the integration of Unity's Localization package with Gri
 <figure>
         <img src=
 "img/column_id.png" 
-             alt="Set colmn ID in column properties" style="width:50%">
-        <figcaption>Set colmn ID in column properties</figcaption>
+             alt="Set column ID in column properties" style="width:50%">
+        <figcaption>Set column ID in column properties</figcaption>
     </figure>
 </figures>
 
@@ -86,8 +86,8 @@ This plugin facilitates the integration of Unity's Localization package with Gri
    - Choose the file(s) and language(s) you want to import.
 
 5. **Import Data**  
-   - Click on `Import Selected Data` to bring the translations back into Unity.
+   - Click on `Import Selected Data` to pull the translations back to Unity.
 
 ---
 
-For further assistance about Unity Localization package, consult the [Unity Localization Documentation](https://docs.unity3d.com/Packages/com.unity.localization@1.0/manual/index.html) or reach out to the plugin developer.
+For further assistance about the Unity Localization package, consult the [Unity Localization Documentation](https://docs.unity3d.com/Packages/com.unity.localization@1.0/manual/index.html).
