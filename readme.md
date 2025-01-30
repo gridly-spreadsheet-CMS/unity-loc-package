@@ -9,7 +9,7 @@ This plugin facilitates the integration of Unity's Localization package with Gri
    - Follow the instructions on the page to add target languages and manage source strings in your game.
 
 2. **Copy Plugin Folder**  
-   - Extract the plugin folder and copy it into your game's `Assets` folder for example 'My project\Assets\Gridly-loc-package'.
+   - Extract the plugin folder and copy it into your game's `Assets` folder for example `My project\Assets\Gridly-loc-package`.
 
 3. **Add Target Languages**  
    - Go to `Edit -> Project Settings -> Localization` and add your target languages.

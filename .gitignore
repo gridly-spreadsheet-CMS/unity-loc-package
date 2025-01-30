@@ -1,2 +1,3 @@
 # Ignore all files with the .meta extension
 *.meta
+*.backup
