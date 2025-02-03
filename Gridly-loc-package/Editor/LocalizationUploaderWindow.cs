@@ -77,6 +77,7 @@ public class LocalizationUploaderWindow : EditorWindow
 
     private static void OnShow()
     {
+        var windowInstance = GetWindow<LocalizationUploaderWindow>("Gridly Integration");
         // Check if UnityEngine.Localization is installed
         if (!IsLocalizationPackageInstalled())
         {
@@ -168,6 +169,30 @@ public class LocalizationUploaderWindow : EditorWindow
         {
             selectedTables.RemoveAt(list.index);
         };
+
+        if (useDifferentImportView)
+        {
+            if (!string.IsNullOrEmpty(importApiKey) && !string.IsNullOrEmpty(importViewId))
+            {
+                windowInstance.GetViewData();
+            }
+            else
+            {
+                Debug.LogWarning("Import API Key or View ID is missing. Please configure them in the settings.");
+            }
+        }
+        else
+        {
+            if (!string.IsNullOrEmpty(exportApiKey) && !string.IsNullOrEmpty(exportViewId))
+            {
+                windowInstance.GetViewData();
+            }
+            else
+            {
+                Debug.LogWarning("Export API Key or View ID is missing. Please configure them in the settings.");
+            }
+        }
+
     }
 
     private void OnGUI()
@@ -255,6 +280,8 @@ public class LocalizationUploaderWindow : EditorWindow
             GetViewData();
         }
 
+
+
         // Render dropdowns only if data is fetched
         if (dataFetched)
         {
@@ -295,6 +322,8 @@ public class LocalizationUploaderWindow : EditorWindow
             GUILayout.Label("Data is not loaded. Please click 'Get View Data' to load.", EditorStyles.helpBox);
         }
     }
+
+
 
     private async void GetViewData()
     {
@@ -353,11 +382,13 @@ public class LocalizationUploaderWindow : EditorWindow
         Repaint(); // Refresh the GUI to show the updated dropdowns
 
         // Log fetched records to the console
+        /*
         Debug.Log("Fetched Records from View:");
         foreach (var column in view.columns)
         {
             Debug.Log($"Column Name: {column.name}, Type: {column.type}");
         }
+        */
     }
 
 
