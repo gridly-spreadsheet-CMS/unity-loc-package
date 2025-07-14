@@ -9,8 +9,10 @@ using Assets.Gridly_loc_package.Editor.Scripts.Gridly.Dialog;
 using UnityEngine.Localization.Settings;
 using UnityEngine.Localization.Tables;
 using Assets.Gridly_loc_package.Editor.Scripts.Gridly.Enum;
+using GridlyAB.GridlyIntegration.Gridly_loc_package.Editor.gridly.Api;
+using GridlyAB.GridlyIntegration.Gridly_loc_package.Editor.gridly.Dialog;
 
-namespace Assets.Gridly_loc_package.Editor.Scripts
+namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
 {
     public class LocalizationImporter
     {

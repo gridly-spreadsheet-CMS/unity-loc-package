@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Assets.Gridly_loc_package.Editor.gridly.Utils
+namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor.gridly.Utils
 {
     public class FileUtils
     {
