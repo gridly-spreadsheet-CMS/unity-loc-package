@@ -2,6 +2,12 @@
 
 This plugin facilitates the integration of Unity's Localization package with Gridly, enabling seamless management and translation of in-game text. Below are the steps to install, configure, and use the plugin.
 
+## Supported Unity versions
+**Unity 2020.3+**
+
+## Unity Core API usage
+The codebase makes extensive use of the Unity API, particularly for editor scripting and localization management. Custom editor windows are created using *EditorWindow* (e.g., for the main plugin UI and error dialogs), with menu entries added via the MenuItem attribute. User preferences are stored and retrieved using *EditorPrefs*, while progress bars and dialogs are managed through *EditorUtility*. Logging and diagnostics utilize *Debug.Log*, *Debug.LogError*, and *Debug.LogWarning*. HTTP requests to external services like Gridly are performed using *UnityWebRequest*, with authentication headers set as needed. The Unity Localization API is leveraged to fetch available locales (*LocalizationEditorSettings.GetLocales()*), manipulate string tables, and update localization data. Asset changes are saved and refreshed using *EditorUtility.SetDirty*, *AssetDatabase.SaveAssets*, and *AssetDatabase.Refresh*. UI in custom windows and dialogs is rendered using IMGUI methods such as *GUILayout.Label* and *GUILayout.Button*. These APIs collectively enable seamless integration of Gridly with Unity’s localization workflow, providing a robust editor experience for managing, importing, and exporting localization data.
+
 ## Installation
 
 1. **Install Unity Localization Package**  
