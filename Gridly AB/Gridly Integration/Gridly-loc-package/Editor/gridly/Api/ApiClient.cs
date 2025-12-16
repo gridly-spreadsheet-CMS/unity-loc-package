@@ -336,6 +336,15 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor.gridly.Api
         }
 
         /// <summary>
+        /// Result structure for paginated record fetching.
+        /// </summary>
+        private class PageResult
+        {
+            public List<Record> Records { get; set; }
+            public int? TotalCount { get; set; }
+        }
+
+        /// <summary>
         /// Fetches all records using pagination.
         /// </summary>
         /// <param name="viewId">The view ID.</param>
@@ -347,14 +356,24 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor.gridly.Api
         {
             var offset = 0;
             var allRecords = new List<Record>();
+            int? totalCount = null;
 
             while (true)
             {
-                var records = await FetchRecordsPageAsync(viewId, apiKey, fileName, languageCode, offset);
+                var pageResult = await FetchRecordsPageAsync(viewId, apiKey, fileName, languageCode, offset);
+                var records = pageResult.Records;
+                var pageTotalCount = pageResult.TotalCount;
+
+                // Set total count from first page if not already set
+                if (totalCount == null && pageTotalCount.HasValue)
+                {
+                    totalCount = pageTotalCount.Value;
+                }
+
                 allRecords.AddRange(records);
 
-                var totalCountHeader = GetTotalCountHeader();
-                if (ShouldStopFetching(allRecords, totalCountHeader))
+                // Stop if we've fetched all records or if the page returned fewer records than the limit (end of data)
+                if (ShouldStopFetching(allRecords, totalCount, records.Count))
                 {
                     return FilterAndTransformRecords(allRecords, languageCode);
                 }
@@ -371,8 +390,8 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor.gridly.Api
         /// <param name="fileName">The file name filter.</param>
         /// <param name="languageCode">The language code filter.</param>
         /// <param name="offset">The offset for pagination.</param>
-        /// <returns>A list of records for the current page.</returns>
-        private async Task<List<Record>> FetchRecordsPageAsync(string viewId, string apiKey, string fileName, string languageCode, int offset)
+        /// <returns>A PageResult containing records and total count from X-Total-Count header.</returns>
+        private async Task<PageResult> FetchRecordsPageAsync(string viewId, string apiKey, string fileName, string languageCode, int offset)
         {
             var query = BuildRecordsQuery(fileName, languageCode);
             var page = BuildPageQuery(offset);
@@ -384,7 +403,21 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor.gridly.Api
             {
                 await SendWebRequestAsync(request);
                 var jsonResponse = request.downloadHandler.text;
-                return JsonConvert.DeserializeObject<List<Record>>(jsonResponse);
+                var records = JsonConvert.DeserializeObject<List<Record>>(jsonResponse);
+                
+                // Read X-Total-Count header from response (Gridly API provides this for pagination)
+                int? totalCount = null;
+                var totalCountHeader = request.GetResponseHeader(TotalCountHeader);
+                if (!string.IsNullOrEmpty(totalCountHeader) && int.TryParse(totalCountHeader, out var parsedCount))
+                {
+                    totalCount = parsedCount;
+                }
+
+                return new PageResult
+                {
+                    Records = records ?? new List<Record>(),
+                    TotalCount = totalCount
+                };
             }
             finally
             {
@@ -414,14 +447,27 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor.gridly.Api
         }
 
         /// <summary>
-        /// Determines if record fetching should stop based on total count.
+        /// Determines if record fetching should stop based on total count or page size.
         /// </summary>
         /// <param name="allRecords">The current list of records.</param>
-        /// <param name="totalCountHeader">The total count header value.</param>
+        /// <param name="totalCount">The total count from X-Total-Count header.</param>
+        /// <param name="currentPageSize">The number of records returned in the current page.</param>
         /// <returns>True if fetching should stop, false otherwise.</returns>
-        private static bool ShouldStopFetching(List<Record> allRecords, string totalCountHeader)
+        private static bool ShouldStopFetching(List<Record> allRecords, int? totalCount, int currentPageSize)
         {
-            return totalCountHeader == null || allRecords.Count >= int.Parse(totalCountHeader);
+            // Stop if we've fetched all records according to the total count header
+            if (totalCount.HasValue && allRecords.Count >= totalCount.Value)
+            {
+                return true;
+            }
+
+            // Stop if the current page returned fewer records than the limit (we've reached the end)
+            if (currentPageSize < DefaultLimit)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -443,16 +489,6 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor.gridly.Api
                 .ToList();
         }
 
-        /// <summary>
-        /// Gets the total count header from the current request.
-        /// </summary>
-        /// <returns>The total count header value, or null if not found.</returns>
-        private static string GetTotalCountHeader()
-        {
-            // This method would need to be implemented to get the header from the current request
-            // For now, returning null as a placeholder
-            return null;
-        }
 
         /// <summary>
         /// Sends a UnityWebRequest asynchronously and handles errors.

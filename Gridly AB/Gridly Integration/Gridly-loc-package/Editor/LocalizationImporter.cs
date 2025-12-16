@@ -47,6 +47,11 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
         private int _totalLanguagesProcessed = 0;
         private int _totalLanguagesToProcess = 0;
 
+        // Performance optimization: Caches for locales and tables to avoid repeated lookups
+        private static readonly Dictionary<string, Locale> _localeCache = new Dictionary<string, Locale>();
+        private static readonly Dictionary<string, StringTable> _tableCache = new Dictionary<string, StringTable>();
+        private static readonly HashSet<StringTable> _allTablesToSave = new HashSet<StringTable>();
+
         /// <summary>
         /// Initializes a new instance of the LocalizationImporter class.
         /// </summary>
@@ -75,6 +80,11 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
         {
             ValidateImportParameters(fileNames, languageCodes);
 
+            // Clear caches and tables set at the start of import
+            _localeCache.Clear();
+            _tableCache.Clear();
+            _allTablesToSave.Clear();
+
             _cancellationTokenSource = new CancellationTokenSource();
             var token = _cancellationTokenSource.Token;
 
@@ -86,6 +96,9 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
             try
             {
                 await ImportLocalizationDataAsync(fileNames, languageCodes, token);
+                
+                // Save all modified tables once at the end (major performance optimization)
+                SaveAllModifiedTables();
             }
             catch (OperationCanceledException)
             {
@@ -122,8 +135,6 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
                 return importResponse;
             }
 
-            var tablesToSave = new List<StringTable>();
-
             foreach (var record in records)
             {
                 var recordImportResult = ProcessRecord(record);
@@ -136,13 +147,14 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
                 importResponse.Added += recordImportResult.Added;
                 importResponse.Updated += recordImportResult.Updated;
 
+                // Add to global set of tables to save (will be saved once at the end)
                 if (recordImportResult.TableToSave != null)
                 {
-                    tablesToSave.Add(recordImportResult.TableToSave);
+                    _allTablesToSave.Add(recordImportResult.TableToSave);
                 }
             }
 
-            SaveModifiedTables(tablesToSave);
+            // Note: Tables are saved once at the end of the entire import process, not per batch
             return importResponse;
         }
 
@@ -307,13 +319,30 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
 
         /// <summary>
         /// Gets a StringTable for the specified collection and locale.
+        /// Uses caching to avoid repeated API calls for the same table.
         /// </summary>
         /// <param name="tableCollectionName">The name of the table collection.</param>
         /// <param name="locale">The locale for the table.</param>
         /// <returns>The StringTable, or null if not found.</returns>
         private static StringTable GetStringTable(string tableCollectionName, Locale locale)
         {
-            return LocalizationSettings.StringDatabase.GetTable(tableCollectionName, locale) as StringTable;
+            // Create cache key from collection name and locale code
+            var cacheKey = $"{tableCollectionName}_{locale.Identifier.Code}";
+            
+            // Check cache first
+            if (_tableCache.TryGetValue(cacheKey, out var cachedTable))
+            {
+                return cachedTable;
+            }
+
+            // Fetch table and cache it
+            var table = LocalizationSettings.StringDatabase.GetTable(tableCollectionName, locale) as StringTable;
+            if (table != null)
+            {
+                _tableCache[cacheKey] = table;
+            }
+            
+            return table;
         }
 
         /// <summary>
@@ -331,35 +360,48 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
                 if (entry.Value != translation)
                 {
                     entry.Value = translation;
-                    Debug.Log($"Updated entry {entryKey} with translation: {translation}");
+                    // Removed Debug.Log for performance - logging every entry update is very slow
                     result.Updated++;
                 }
             }
             else
             {
                 table.AddEntry(entryKey, translation);
-                Debug.Log($"Added new entry {entryKey} with translation: {translation}");
+                // Removed Debug.Log for performance - logging every entry add is very slow
                 result.Added++;
             }
         }
 
         /// <summary>
-        /// Saves all modified tables to disk.
+        /// Saves all modified tables to disk once at the end of import.
+        /// This is a major performance optimization - previously SaveAssets/Refresh was called for each file-language combination.
         /// </summary>
-        /// <param name="tablesToSave">The list of tables to save.</param>
-        private static void SaveModifiedTables(List<StringTable> tablesToSave)
+        private static void SaveAllModifiedTables()
         {
-            foreach (var table in tablesToSave)
+            if (_allTablesToSave.Count == 0)
+                return;
+
+            // Mark all tables as dirty
+            foreach (var table in _allTablesToSave)
             {
-                EditorUtility.SetDirty(table);
-                EditorUtility.SetDirty(table.SharedData);
-                AssetDatabase.SaveAssets();
-                AssetDatabase.Refresh();
+                if (table != null)
+                {
+                    EditorUtility.SetDirty(table);
+                    if (table.SharedData != null)
+                    {
+                        EditorUtility.SetDirty(table.SharedData);
+                    }
+                }
             }
+
+            // Save and refresh once for all tables (major performance improvement)
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
         }
 
         /// <summary>
         /// Gets a locale by identifier using multiple fallback methods to ensure availability.
+        /// Uses caching to avoid repeated lookups for the same locale.
         /// </summary>
         /// <param name="localeIdentifier">The locale identifier to find.</param>
         /// <returns>The found locale, or null if not found.</returns>
@@ -371,19 +413,41 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
                 return null;
             }
 
+            // Check cache first (major performance optimization)
+            if (_localeCache.TryGetValue(localeIdentifier, out var cachedLocale))
+            {
+                return cachedLocale;
+            }
+
+            Locale locale = null;
+
             // Method 1: Try LocalizationSettings.AvailableLocales
-            var locale = TryGetLocaleFromSettings(localeIdentifier);
-            if (locale != null) return locale;
+            locale = TryGetLocaleFromSettings(localeIdentifier);
+            if (locale != null)
+            {
+                _localeCache[localeIdentifier] = locale;
+                return locale;
+            }
 
             // Method 2: Try LocalizationEditorSettings.GetLocales()
             locale = TryGetLocaleFromEditorSettings(localeIdentifier);
-            if (locale != null) return locale;
+            if (locale != null)
+            {
+                _localeCache[localeIdentifier] = locale;
+                return locale;
+            }
 
             // Method 3: Try with normalized format
             locale = TryGetLocaleWithNormalizedIdentifier(localeIdentifier);
-            if (locale != null) return locale;
+            if (locale != null)
+            {
+                _localeCache[localeIdentifier] = locale;
+                return locale;
+            }
 
             Debug.LogError(string.Format(LocaleNotFoundForIdentifierError, localeIdentifier));
+            // Cache null result to avoid repeated failed lookups
+            _localeCache[localeIdentifier] = null;
             return null;
         }
 
