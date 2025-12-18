@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
-using Csv; // Import the CsvExport library
 
 namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
 {
@@ -25,8 +24,6 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
         private const string RECORD_ID_HEADER = "_recordId";
         private const string PATH_TAG_HEADER = "_pathTag";
         private const string CSV_SEPARATOR = ",";
-        private const string QUOTE_CHARACTER = "\"";
-        private const string ESCAPED_QUOTE = "\"\"";
         private const char NEWLINE_CHARACTER = '\n';
         private const string EMPTY_STRING = "";
 
@@ -151,7 +148,8 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
         {
             if (headers.Length > LANGUAGE_COLUMN_INDEX)
             {
-                return headers[LANGUAGE_COLUMN_INDEX].Trim();
+                // Don't trim - preserve original header value
+                return headers[LANGUAGE_COLUMN_INDEX];
             }
             return EMPTY_STRING;
         }
@@ -183,16 +181,18 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
 
         /// <summary>
         /// Extracts record data from a CSV row.
+        /// Preserves trailing/leading whitespace in values.
         /// </summary>
         /// <param name="values">The values from a CSV row.</param>
         /// <returns>A record data structure containing the extracted values.</returns>
         private static (string RecordId, string PathTag, string Translation, string SmartString) ExtractRecordData(string[] values)
         {
+            // Don't trim - preserve trailing/leading spaces in all values
             return (
-                values[RECORD_ID_COLUMN_INDEX].Trim(),
-                values[PATH_TAG_COLUMN_INDEX].Trim(),
-                values[LANGUAGE_COLUMN_INDEX].Trim(),
-                values[SMART_STRING_COLUMN_INDEX].Trim()
+                values[RECORD_ID_COLUMN_INDEX],
+                values[PATH_TAG_COLUMN_INDEX],
+                values[LANGUAGE_COLUMN_INDEX],
+                values[SMART_STRING_COLUMN_INDEX]
             );
         }
 
@@ -208,7 +208,7 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
         }
 
         /// <summary>
-        /// Writes the merged CSV data to the output file.
+        /// Writes the merged CSV data to the output file using CustomCsvExport.
         /// </summary>
         /// <param name="outputFilePath">The path where the merged CSV file will be written.</param>
         /// <param name="mergedData">The merged data to write.</param>
@@ -217,7 +217,38 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
         private static async Task WriteMergedCsvFile(string outputFilePath, Dictionary<string, Dictionary<string, string>> mergedData, List<string> languages)
         {
             CreateOutputDirectory(outputFilePath);
-            var csvContent = BuildCsvContent(mergedData, languages);
+            
+            // Use CustomCsvExport to write merged CSV, which automatically preserves trailing spaces
+            var csv = new CustomCsvExport(
+                columnSeparator: CSV_SEPARATOR,
+                includeColumnSeparatorDefinitionPreamble: false,
+                includeHeaderRow: true
+            );
+            
+            // Build header columns
+            var allColumns = new List<string> { RECORD_ID_HEADER, PATH_TAG_HEADER, SMART_STRING_COLUMN_NAME };
+            allColumns.AddRange(languages);
+            
+            // Add rows
+            foreach (var entry in mergedData)
+            {
+                csv.AddRow();
+                var keyParts = entry.Key.Split(',');
+                var translations = entry.Value;
+                
+                csv[RECORD_ID_HEADER] = keyParts[0];
+                csv[PATH_TAG_HEADER] = keyParts[1];
+                csv[SMART_STRING_COLUMN_NAME] = translations.ContainsKey(SMART_STRING_COLUMN_NAME) 
+                    ? translations[SMART_STRING_COLUMN_NAME] 
+                    : EMPTY_STRING;
+                
+                foreach (string language in languages)
+                {
+                    csv[language] = translations.ContainsKey(language) ? translations[language] : EMPTY_STRING;
+                }
+            }
+            
+            string csvContent = csv.Export();
             await File.WriteAllTextAsync(outputFilePath, csvContent);
             Debug.Log($"Merged CSV file written to {outputFilePath}");
         }
@@ -235,92 +266,6 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
             }
         }
 
-        /// <summary>
-        /// Builds the CSV content from the merged data.
-        /// </summary>
-        /// <param name="mergedData">The merged data to convert to CSV.</param>
-        /// <param name="languages">The list of languages.</param>
-        /// <returns>The CSV content as a string.</returns>
-        private static string BuildCsvContent(Dictionary<string, Dictionary<string, string>> mergedData, List<string> languages)
-        {
-            var csvBuilder = new StringBuilder();
-            
-            // Add header
-            csvBuilder.AppendLine(BuildCsvHeader(languages));
-            
-            // Add data rows
-            foreach (var entry in mergedData)
-            {
-                csvBuilder.AppendLine(BuildCsvRow(entry, languages));
-            }
-            
-            return csvBuilder.ToString();
-        }
-
-        /// <summary>
-        /// Builds the CSV header row.
-        /// </summary>
-        /// <param name="languages">The list of languages.</param>
-        /// <returns>The CSV header as a string.</returns>
-        private static string BuildCsvHeader(List<string> languages)
-        {
-            var headerParts = new List<string>
-            {
-                RECORD_ID_HEADER,
-                PATH_TAG_HEADER,
-                SMART_STRING_COLUMN_NAME
-            };
-            
-            headerParts.AddRange(languages.Select(EscapeCsvValue));
-            return string.Join(CSV_SEPARATOR, headerParts);
-        }
-
-        /// <summary>
-        /// Builds a CSV data row.
-        /// </summary>
-        /// <param name="entry">The key-value pair containing record data.</param>
-        /// <param name="languages">The list of languages.</param>
-        /// <returns>The CSV row as a string.</returns>
-        private static string BuildCsvRow(KeyValuePair<string, Dictionary<string, string>> entry, List<string> languages)
-        {
-            var keyParts = entry.Key.Split(',');
-            var translations = entry.Value;
-
-            var rowParts = new List<string>
-            {
-                EscapeCsvValue(keyParts[0]),
-                EscapeCsvValue(keyParts[1]),
-                EscapeCsvValue(translations[SMART_STRING_COLUMN_NAME])
-            };
-
-            foreach (string language in languages)
-            {
-                string translation = translations.ContainsKey(language) ? translations[language] : EMPTY_STRING;
-                rowParts.Add(EscapeCsvValue(translation));
-            }
-
-            return string.Join(CSV_SEPARATOR, rowParts);
-        }
-
-        /// <summary>
-        /// Escapes a CSV value by handling quotes, commas, and newlines.
-        /// </summary>
-        /// <param name="value">The value to escape.</param>
-        /// <returns>The escaped CSV value.</returns>
-        private static string EscapeCsvValue(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-            {
-                return EMPTY_STRING;
-            }
-
-            if (value.Contains(QUOTE_CHARACTER) || value.Contains(CSV_SEPARATOR) || value.Contains(NEWLINE_CHARACTER))
-            {
-                return $"{QUOTE_CHARACTER}{value.Replace(QUOTE_CHARACTER, ESCAPED_QUOTE)}{QUOTE_CHARACTER}";
-            }
-            
-            return value;
-        }
 
         /// <summary>
         /// Parses CSV content into a list of string arrays representing rows and columns.

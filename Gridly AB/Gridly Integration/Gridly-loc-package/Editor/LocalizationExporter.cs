@@ -4,12 +4,12 @@ using UnityEditor.Localization;
 using UnityEngine;
 using UnityEngine.Localization;
 using UnityEngine.Localization.Tables;
-using Csv;
 using System.Linq;
 using Assets.Gridly_loc_package.Editor.Scripts.Gridly.Dialog;
 using Assets.Gridly_loc_package.Editor.Scripts.Gridly.Enum;
 using GridlyAB.GridlyIntegration.Gridly_loc_package.Editor.gridly.Dialog;
 using System.Collections.Generic;
+using GridlyAB.GridlyIntegration.Gridly_loc_package.Editor;
 
 namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
 {
@@ -159,7 +159,10 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
 
                 if (exportedEntryCount > 0)
                 {
-                    await File.WriteAllTextAsync(filePath, csv.Export());
+                    string csvContent = csv.Export();
+                    // Debug: Check if CsvExport trimmed trailing spaces
+                    // If spaces are lost here, CsvExport library is trimming during Export()
+                    await File.WriteAllTextAsync(filePath, csvContent);
                     Debug.Log($"Localization data exported to {filePath}");
                 }
             }
@@ -172,15 +175,16 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
         }
 
         /// <summary>
-        /// Creates a new CsvExport instance with the configured settings.
+        /// Creates a new CSV export instance with the configured settings.
+        /// Uses CustomCsvExport instead of CsvExport.dll to preserve trailing/leading whitespace.
         /// </summary>
-        /// <returns>A configured CsvExport instance.</returns>
-        private static CsvExport CreateCsvExport()
+        /// <returns>A configured CSV export instance.</returns>
+        private static CustomCsvExport CreateCsvExport()
         {
-            return new CsvExport(
+            return new CustomCsvExport(
                 columnSeparator: CsvColumnSeparator,
                 includeColumnSeparatorDefinitionPreamble: false, // Excel compatibility
-                includeHeaderRow: true
+                includeHeaderRow: true              
             );
         }
 
@@ -191,7 +195,7 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
         /// <param name="stringTable">The StringTable containing the data.</param>
         /// <param name="localeIdentifier">The locale identifier.</param>
         /// <param name="selectedExportOption">The smart string filtering option.</param>
-        /// <param name="csv">The CsvExport instance to add rows to.</param>
+        /// <param name="csv">The CSV export instance to add rows to.</param>
         /// <param name="totalEntries">The total number of entries for progress tracking.</param>
         /// <returns>The number of entries successfully processed.</returns>
         private static async Task<int> ProcessEntriesAsync(
@@ -199,7 +203,7 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
             StringTable stringTable,
             LocaleIdentifier localeIdentifier,
             SmartOption selectedExportOption,
-            CsvExport csv,
+            CustomCsvExport csv,
             int totalEntries)
         {
             int processedEntryCount = 0;
@@ -245,12 +249,12 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
         /// <summary>
         /// Adds a single entry to the CSV export.
         /// </summary>
-        /// <param name="csv">The CsvExport instance to add the row to.</param>
+        /// <param name="csv">The CSV export instance to add the row to.</param>
         /// <param name="entry">The entry to add.</param>
         /// <param name="stringTable">The StringTable containing the entry.</param>
         /// <param name="localeIdentifier">The locale identifier.</param>
         private static void AddEntryToCsv(
-            CsvExport csv, 
+            CustomCsvExport csv, 
             object entry, 
             StringTable stringTable, 
             LocaleIdentifier localeIdentifier)
@@ -261,6 +265,7 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
             csv.AddRow();
             csv[RecordIdColumn] = dynamicEntry.Key;
             csv[PathTagColumn] = stringTable.TableCollectionName;
+            // CustomCsvExport automatically quotes values with trailing/leading spaces to preserve whitespace
             csv[localeIdentifier.Code.Replace("-", "")] = dynamicEntry.LocalizedValue;
             csv[SmartStringColumn] = dynamicEntry.IsSmart.ToString().ToLower();
         }
