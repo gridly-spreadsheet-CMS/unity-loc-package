@@ -27,16 +27,8 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
 
     public class LocalizationUploaderWindow : EditorWindow
     {
-        private const string SelectedTablesKey = "Gridly_SelectedTables";
-        private const string ExportPathKey = "Gridly_ExportPath";
-        private const string ExportViewIdKey = "Gridly_ExportViewId";
-        private const string ImportViewIdKey = "Gridly_ImportViewId";
-        private const string ExportApiKeyKey = "Gridly_ExportApiKey";
-        private const string ImportApiKeyKey = "Gridly_ImportApiKey";
-        private const string DeleteExtraRecordsKey = "Gridly_DeleteExtraRecords";
-        private const string UseDifferentImportViewKey = "Gridly_UseDifferentImportView";
-        private const string ImportOptionKey = "Gridly_ImportOption";
-        private const string ExportOptionKey = "Gridly_ExportOption";
+        // Settings are now stored in ProjectSettings via GridlyProjectSettings ScriptableObject
+        private GridlyProjectSettings _settings;
 
 
 
@@ -76,12 +68,12 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
         [MenuItem("Tools/Gridly Integration")]
         public static void ShowWindow()
         {
-            GetWindow<LocalizationUploaderWindow>("Gridly Integration");
-            OnShow();
+            var window = GetWindow<LocalizationUploaderWindow>("Gridly Integration");
+            window.OnShow();
         }
 
 
-        private static void OnShow()
+        private void OnShow()
         {
             var windowInstance = GetWindow<LocalizationUploaderWindow>("Gridly Integration");
             // Check if UnityEngine.Localization is installed
@@ -97,84 +89,25 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
             // Fetch available locales
             availableLocales = LocalizationEditorSettings.GetLocales().ToList();
 
-            // Load saved settings
-            exportPath = EditorPrefs.GetString(ExportPathKey, "Assets/LocalizationExports/");
-            exportViewId = EditorPrefs.GetString(ExportViewIdKey, "VIEWID"); // Default value
-            importViewId = EditorPrefs.GetString(ImportViewIdKey, "importViewId"); // Default value
-            exportApiKey = EditorPrefs.GetString(ExportApiKeyKey, "EXPORTAPIKEY");
-            importApiKey = EditorPrefs.GetString(ImportApiKeyKey, "IMPORTAPIKEY");// Default value
-            deleteExtraRecordsKey = EditorPrefs.GetBool(DeleteExtraRecordsKey, true);
-            useDifferentImportView = EditorPrefs.GetBool(UseDifferentImportViewKey, false);
-            selectedImportOption = (SmartOption)EditorPrefs.GetInt(ImportOptionKey, (int)SmartOption.AllStrings);
-            selectedExportOption = (SmartOption)EditorPrefs.GetInt(ExportOptionKey, (int)SmartOption.AllStrings);
-
+            // Load project settings from ProjectSettings
+            _settings = GridlyProjectSettings.Instance;
+            
+            // Load saved settings from ProjectSettings
+            exportPath = _settings.exportPath;
+            exportViewId = _settings.exportViewId;
+            importViewId = _settings.importViewId;
+            exportApiKey = _settings.exportApiKey;
+            importApiKey = _settings.importApiKey;
+            deleteExtraRecordsKey = _settings.deleteExtraRecords;
+            useDifferentImportView = _settings.useDifferentImportView;
+            selectedImportOption = _settings.selectedImportOption;
+            selectedExportOption = _settings.selectedExportOption;
 
             // Load saved table selections
             LoadSelectedTables();
 
             // Initialize the reorderable list
-            tableList = new ReorderableList(selectedTables, typeof(TableSelection), true, true, true, true);
-
-            tableList.drawHeaderCallback = (Rect rect) =>
-            {
-                EditorGUI.LabelField(rect, "Localization Tables");
-            };
-
-            tableList.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
-            {
-                var element = selectedTables[index];
-
-                float halfWidth = rect.width / 2;
-                element.Table = (StringTableCollection)EditorGUI.ObjectField(
-                    new Rect(rect.x, rect.y, halfWidth, EditorGUIUtility.singleLineHeight),
-                    element.Table,
-                    typeof(StringTableCollection),
-                    false
-                );
-
-                if (element.Table != null)
-                {
-                    // Get the locale names
-                    string[] localeNames = element.GetLocaleNames(availableLocales);
-
-                    // Ensure that localeNames is not null or empty
-                    if (localeNames != null && localeNames.Length > 0)
-                    {
-                        // Ensure LocaleMask is within a valid range
-                        int maxMaskValue = (1 << localeNames.Length) - 1;  // Maximum value with all bits set
-
-                        if (element.LocaleMask > maxMaskValue || element.LocaleMask < 0)
-                        {
-                            element.LocaleMask = 0; // Reset to 0 if out of bounds
-                        }
-
-                        // Display the MaskField and update LocaleMask
-                        element.LocaleMask = EditorGUI.MaskField(
-                            new Rect(rect.x + halfWidth + 5, rect.y, halfWidth - 5, EditorGUIUtility.singleLineHeight),
-                            "Select Locales",
-                            element.LocaleMask,
-                            localeNames
-                        );
-
-                        // Ensure that the LocaleMask does not exceed the maximum allowed mask value
-                        element.LocaleMask &= maxMaskValue;
-                    }
-                    else
-                    {
-                        Debug.LogError("Locale names array is null or empty. MaskField cannot be displayed.");
-                    }
-                }
-            };
-
-            tableList.onAddCallback = (ReorderableList list) =>
-            {
-                selectedTables.Add(new TableSelection());
-            };
-
-            tableList.onRemoveCallback = (ReorderableList list) =>
-            {
-                selectedTables.RemoveAt(list.index);
-            };
+            InitializeTableList();
 
             if (useDifferentImportView)
             {
@@ -203,6 +136,40 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
 
         private void OnGUI()
         {
+            // Ensure settings are initialized
+            if (_settings == null)
+            {
+                _settings = GridlyProjectSettings.Instance;
+                // Load settings if not already loaded
+                if (_settings != null)
+                {
+                    exportPath = _settings.exportPath;
+                    exportViewId = _settings.exportViewId;
+                    importViewId = _settings.importViewId;
+                    exportApiKey = _settings.exportApiKey;
+                    importApiKey = _settings.importApiKey;
+                    deleteExtraRecordsKey = _settings.deleteExtraRecords;
+                    useDifferentImportView = _settings.useDifferentImportView;
+                    selectedImportOption = _settings.selectedImportOption;
+                    selectedExportOption = _settings.selectedExportOption;
+                }
+            }
+            
+            // Ensure tableList is initialized
+            if (tableList == null)
+            {
+                if (availableLocales == null)
+                {
+                    availableLocales = LocalizationEditorSettings.GetLocales().ToList();
+                }
+                if (selectedTables == null)
+                {
+                    selectedTables = new List<TableSelection>();
+                    LoadSelectedTables();
+                }
+                InitializeTableList();
+            }
+
             GUILayout.Label("Connection settings", EditorStyles.boldLabel);
 
             // Folder browser for Export Path
@@ -246,9 +213,16 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
             GUILayout.Label("Export into Gridly", EditorStyles.boldLabel);
 
             // Draw the reorderable list in a scroll view
-            scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
-            tableList.DoLayoutList();
-            EditorGUILayout.EndScrollView();
+            if (tableList != null)
+            {
+                scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
+                tableList.DoLayoutList();
+                EditorGUILayout.EndScrollView();
+            }
+            else
+            {
+                EditorGUILayout.HelpBox("Initializing table list...", MessageType.Info);
+            }
 
 
             if (GUILayout.Button("Export CSV and upload to Gridly"))
@@ -489,16 +463,18 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
 
             List<string> csvFiles = new List<string>();
 
+            // Ensure ApiClient and ColumnResolver are initialized
+            if (apiClient == null)
+            {
+                apiClient = new ApiClient();
+            }
+            if (columnResolver == null)
+            {
+                columnResolver = new ColumnResolver(apiClient);
+            }
+
             // Call the ColumnResolver to process the uploaded data
-            if (columnResolver != null)
-            {
-                await columnResolver.StartColumnResolverAsync(exportViewId, exportApiKey, localeIdentifiers);
-            }
-            else
-            {
-                Debug.LogError("ColumnResolver not found or not properly initialized.");
-                return;
-            }
+            await columnResolver.StartColumnResolverAsync(exportViewId, exportApiKey, localeIdentifiers);
 
             // Export the localization data for each selected table and selected locales
             foreach (var tableSelection in selectedTables)
@@ -844,13 +820,14 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
         {
             string serializedTables = string.Join("|", selectedTables.Select(t =>
                 $"{t.Table?.TableCollectionName},{t.LocaleMask}"));
-            EditorPrefs.SetString(SelectedTablesKey, serializedTables);
+            _settings.selectedTables = serializedTables;
+            _settings.Save();
         }
 
-        private static void LoadSelectedTables()
+        private void LoadSelectedTables()
         {
             selectedTables.Clear();
-            string serializedTables = EditorPrefs.GetString(SelectedTablesKey, "");
+            string serializedTables = _settings != null ? _settings.selectedTables : "";
 
             if (!string.IsNullOrEmpty(serializedTables))
             {
@@ -893,18 +870,122 @@ namespace GridlyAB.GridlyIntegration.Gridly_loc_package.Editor
             Debug.LogError("Failed to upload file: " + errorMessage);
         }
 
+        /// <summary>
+        /// Initializes the reorderable list for localization tables.
+        /// </summary>
+        private void InitializeTableList()
+        {
+            if (tableList != null)
+            {
+                return; // Already initialized
+            }
+
+            if (selectedTables == null)
+            {
+                selectedTables = new List<TableSelection>();
+            }
+
+            if (availableLocales == null)
+            {
+                availableLocales = LocalizationEditorSettings.GetLocales().ToList();
+            }
+
+            tableList = new ReorderableList(selectedTables, typeof(TableSelection), true, true, true, true);
+
+            tableList.drawHeaderCallback = (Rect rect) =>
+            {
+                EditorGUI.LabelField(rect, "Localization Tables");
+            };
+
+            tableList.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
+            {
+                if (index < 0 || index >= selectedTables.Count)
+                {
+                    return;
+                }
+
+                var element = selectedTables[index];
+
+                float halfWidth = rect.width / 2;
+                element.Table = (StringTableCollection)EditorGUI.ObjectField(
+                    new Rect(rect.x, rect.y, halfWidth, EditorGUIUtility.singleLineHeight),
+                    element.Table,
+                    typeof(StringTableCollection),
+                    false
+                );
+
+                if (element.Table != null && availableLocales != null)
+                {
+                    // Get the locale names
+                    string[] localeNames = element.GetLocaleNames(availableLocales);
+
+                    // Ensure that localeNames is not null or empty
+                    if (localeNames != null && localeNames.Length > 0)
+                    {
+                        // Ensure LocaleMask is within a valid range
+                        int maxMaskValue = (1 << localeNames.Length) - 1;  // Maximum value with all bits set
+
+                        if (element.LocaleMask > maxMaskValue || element.LocaleMask < 0)
+                        {
+                            element.LocaleMask = 0; // Reset to 0 if out of bounds
+                        }
+
+                        // Display the MaskField and update LocaleMask
+                        element.LocaleMask = EditorGUI.MaskField(
+                            new Rect(rect.x + halfWidth + 5, rect.y, halfWidth - 5, EditorGUIUtility.singleLineHeight),
+                            "Select Locales",
+                            element.LocaleMask,
+                            localeNames
+                        );
+
+                        // Ensure that the LocaleMask does not exceed the maximum allowed mask value
+                        element.LocaleMask &= maxMaskValue;
+                    }
+                    else
+                    {
+                        Debug.LogError("Locale names array is null or empty. MaskField cannot be displayed.");
+                    }
+                }
+            };
+
+            tableList.onAddCallback = (ReorderableList list) =>
+            {
+                selectedTables.Add(new TableSelection());
+            };
+
+            tableList.onRemoveCallback = (ReorderableList list) =>
+            {
+                if (list.index >= 0 && list.index < selectedTables.Count)
+                {
+                    selectedTables.RemoveAt(list.index);
+                }
+            };
+        }
+
         private void OnDisable()
         {
-            // Save preferences when the window is closed or disabled
-            EditorPrefs.SetString(ExportPathKey, exportPath);
-            EditorPrefs.SetString(ExportViewIdKey, exportViewId);
-            EditorPrefs.SetString(ExportApiKeyKey, exportApiKey);
-            EditorPrefs.SetString(ImportViewIdKey, importViewId);
-            EditorPrefs.SetString(ImportApiKeyKey, importApiKey);
-            EditorPrefs.SetBool(DeleteExtraRecordsKey, deleteExtraRecordsKey);
-            EditorPrefs.SetBool(UseDifferentImportViewKey, useDifferentImportView);
-            EditorPrefs.SetInt(ImportOptionKey, (int)selectedImportOption);
-            EditorPrefs.SetInt(ExportOptionKey, (int)selectedExportOption);
+            // Save all preferences to ProjectSettings when the window is closed or disabled
+            if (_settings != null)
+            {
+                // Save connection settings
+                _settings.exportPath = exportPath;
+                _settings.exportViewId = exportViewId;
+                _settings.importViewId = importViewId;
+                _settings.exportApiKey = exportApiKey;
+                _settings.importApiKey = importApiKey;
+                
+                // Save option settings
+                _settings.deleteExtraRecords = deleteExtraRecordsKey;
+                _settings.useDifferentImportView = useDifferentImportView;
+                _settings.selectedImportOption = selectedImportOption;
+                _settings.selectedExportOption = selectedExportOption;
+                
+                // Save selected tables
+                SaveSelectedTables();
+                
+                // Save all settings to disk
+                _settings.Save();
+            }
         }
 
         private class TableSelection
